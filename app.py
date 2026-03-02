@@ -10,7 +10,7 @@ from src.llm_analyze import analyze_transactions_with_llm
 st.set_page_config(page_title="Spendwise", page_icon="💳", layout="wide")
 
 st.title("Spendwise 💳")
-st.caption("Upload PDF → extraction → anonymisation → analyse → recommandations (MVP).")
+st.caption("Upload PDF → extraction → anonymisation → analyse IA → recommandations.")
 
 pdf = st.file_uploader("Upload ton relevé bancaire (PDF)", type=["pdf"])
 
@@ -36,7 +36,7 @@ if pdf:
         if q.issues:
             st.warning("Points d’attention :\n- " + "\n- ".join(q.issues))
         else:
-            st.success("Extraction OK (aucun problème détecté).")
+            st.success("Extraction OK.")
 
     if txs:
         df = pd.DataFrame([{"date": t.date, "label_raw": t.label_raw, "amount": t.amount} for t in txs])
@@ -44,9 +44,20 @@ if pdf:
         st.dataframe(df, use_container_width=True)
 
         sanitized = sanitize_transactions(txs)
+
         st.subheader("Transactions (anonymisées)")
         st.dataframe(pd.DataFrame(sanitized), use_container_width=True)
 
-        st.subheader("Analyse & recommandations (V0)")
-        result = analyze_transactions_with_llm(sanitized)
+        st.subheader("Analyse IA & recommandations")
+
+        api_key = st.secrets["OPENAI_API_KEY"]
+        model = st.secrets.get("OPENAI_MODEL", "gpt-5-mini")
+
+        with st.spinner("Analyse IA en cours..."):
+            result = analyze_transactions_with_llm(
+                sanitized,
+                api_key=api_key,
+                model=model
+            )
+
         st.json(result)
