@@ -1,37 +1,78 @@
-from typing import Dict, List, Any
-from openai import OpenAI
+from __future__ import annotations
+
 import json
+from typing import Any, Dict, List
+
+from openai import OpenAI
 
 
 def analyze_transactions_with_llm(
     transactions: List[Dict[str, Any]],
-    *,
     api_key: str,
-    model: str,
+    model: str = "gpt-5-mini",
 ) -> Dict[str, Any]:
+    """
+    Envoie les transactions anonymisées à l'IA
+    et retourne une analyse structurée.
+    """
 
     client = OpenAI(api_key=api_key)
 
-    system_prompt = (
-        "Tu es Spendwise, un analyste financier. "
-        "Tu reçois des transactions anonymisées (date, label, amount). "
-        "Detecte abonnements, catégories, anomalies et recommandations actionnables. "
-        "Retourne uniquement du JSON valide."
-    )
+    system_prompt = """
+Tu es un analyste financier intelligent.
+Tu reçois une liste de transactions bancaires anonymisées.
 
-    user_prompt = json.dumps({
-        "transactions": transactions,
-        "rules": "amount < 0 = dépense, amount > 0 = revenu"
-    })
+Ta mission :
+1. Identifier les abonnements récurrents.
+2. Regrouper les dépenses par catégorie.
+3. Identifier les dépenses élevées ou inhabituelles.
+4. Proposer des recommandations concrètes d'optimisation.
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.2,
-    )
+Réponds STRICTEMENT en JSON valide avec ce format :
 
-    content = response.choices[0].message.content
-    return json.loads(content)
+{
+  "subscriptions": [],
+  "categories": {},
+  "unusual_expenses": [],
+  "recommendations": []
+}
+"""
+
+    user_prompt = f"""
+Voici les transactions (format JSON) :
+
+{json.dumps(transactions, ensure_ascii=False)}
+
+Analyse-les.
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
+
+        content = response.choices[0].message.content
+
+        # Sécurisation : si l'IA renvoie du texte autour du JSON
+        try:
+            return json.loads(content)
+        except Exception:
+            # tentative d'extraction JSON si entouré de texte
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start != -1 and end != -1:
+                return json.loads(content[start:end])
+            else:
+                return {
+                    "error": "Impossible de parser la réponse IA",
+                    "raw_output": content,
+                }
+
+    except Exception as e:
+        return {
+            "error": str(e)
+        }
