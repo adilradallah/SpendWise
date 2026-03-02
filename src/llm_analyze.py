@@ -1,40 +1,37 @@
-from __future__ import annotations
 from typing import Dict, List, Any
+from openai import OpenAI
+import json
 
 
-def analyze_transactions_with_llm(transactions: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    V0 : Pas encore branché à une vraie IA.
-    On fait un résumé simple pour valider le pipeline complet.
-    """
+def analyze_transactions_with_llm(
+    transactions: List[Dict[str, Any]],
+    *,
+    api_key: str,
+    model: str,
+) -> Dict[str, Any]:
 
-    total_spend = sum(t["amount"] for t in transactions if t["amount"] < 0)
-    total_income = sum(t["amount"] for t in transactions if t["amount"] > 0)
+    client = OpenAI(api_key=api_key)
 
-    # Détection simple "pseudo récurrent" (même label plusieurs fois)
-    label_counts = {}
-    for t in transactions:
-        label_counts[t["label"]] = label_counts.get(t["label"], 0) + 1
+    system_prompt = (
+        "Tu es Spendwise, un analyste financier. "
+        "Tu reçois des transactions anonymisées (date, label, amount). "
+        "Detecte abonnements, catégories, anomalies et recommandations actionnables. "
+        "Retourne uniquement du JSON valide."
+    )
 
-    potential_recurring = [
-        {"label": label, "count": count}
-        for label, count in label_counts.items()
-        if count >= 2
-    ]
+    user_prompt = json.dumps({
+        "transactions": transactions,
+        "rules": "amount < 0 = dépense, amount > 0 = revenu"
+    })
 
-    return {
-        "summary": {
-            "total_spend": round(total_spend, 2),
-            "total_income": round(total_income, 2),
-            "transaction_count": len(transactions),
-        },
-        "potential_recurring_transactions": potential_recurring,
-        "subscriptions": [],
-        "categories": [],
-        "actions": [
-            {
-                "title": "Activer l’analyse IA avancée",
-                "detail": "Brancher un modèle IA sur les transactions anonymisées pour détecter abonnements réels, catégories précises et recommandations optimisées."
-            }
-        ]
-    }
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+    )
+
+    content = response.choices[0].message.content
+    return json.loads(content)
