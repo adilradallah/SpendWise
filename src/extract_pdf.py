@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pypdf import PdfReader
+import io
 
 
 @dataclass
@@ -12,27 +11,18 @@ class ExtractedDoc:
 
 
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> ExtractedDoc:
-    """
-    V0: extraction texte d'un PDF "texte".
-    (On ajoutera OCR + fallback plus tard pour les PDF scannés.)
-    """
-    reader = PdfReader(_bytes_to_filelike(pdf_bytes))
-
+    reader = PdfReader(io.BytesIO(pdf_bytes))
     texts = []
+
     for page in reader.pages:
         t = page.extract_text() or ""
         texts.append(t)
 
     raw_text = "\n".join(texts).strip()
-    is_text_pdf = len(raw_text) > 200  # heuristique simple
+    is_text_pdf = len(raw_text) > 200
 
     return ExtractedDoc(
         raw_text=raw_text,
         num_pages=len(reader.pages),
-        is_text_pdf=is_text_pdf,
+        is_text_pdf=is_text_pdf
     )
-
-
-def _bytes_to_filelike(b: bytes):
-    import io
-    return io.BytesIO(b)
