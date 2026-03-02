@@ -14,22 +14,15 @@ class Transaction:
     amount: float
 
 
-# Dates possibles dans les relevés FR:
-# - 22.12 (BNP)
-# - 22/12/2025
-# - 2025-12-22
 DATE_PATTERNS = [
     r"\b\d{2}\.\d{2}\b",                # 22.12
     r"\b\d{2}[/-]\d{2}[/-]\d{4}\b",     # 22/12/2025
     r"\b\d{4}[/-]\d{2}[/-]\d{2}\b",     # 2025-12-22
 ]
 
-# Montants typiques dans ce relevé (virgule décimale)
-# Ex: 11,99  | 1 234,56 | 900,00
-AMOUNT_PATTERN = r"[-+]?\d{1,3}(?:[ .]\d{3})*(?:,\d{2})"
+# IMPORTANT: accepte , OU . comme séparateur décimal
+AMOUNT_PATTERN = r"[-+]?\d{1,3}(?:[ .]\d{3})*(?:[.,]\d{2})"
 
-# Période BNP (texte)
-# "du 21 décembre 2025 au 21 janvier 2026"
 PERIOD_PATTERN = re.compile(
     r"du\s+(\d{1,2})\s+([a-zA-Zéèêëàâîïôöùûüç]+)\s+(\d{4})\s+au\s+(\d{1,2})\s+([a-zA-Zéèêëàâîïôöùûüç]+)\s+(\d{4})",
     re.IGNORECASE,
@@ -44,7 +37,6 @@ FR_MONTHS = {
 def parse_transactions_from_text(raw_text: str) -> List[Transaction]:
     lines = [l.strip() for l in raw_text.splitlines() if l.strip()]
 
-    # Détecte la période pour déduire l’année quand on a des dates "dd.mm"
     period = _extract_statement_period(raw_text)  # (start_year, start_month, end_year, end_month) ou None
 
     date_regex = re.compile("|".join(DATE_PATTERNS))
@@ -53,24 +45,20 @@ def parse_transactions_from_text(raw_text: str) -> List[Transaction]:
     txs: List[Transaction] = []
 
     for line in lines:
-        # On cherche une date + un montant (sinon ce n’est pas une transaction)
         date_tokens = date_regex.findall(line)
         amount_tokens = amount_regex.findall(line)
 
         if not date_tokens or not amount_tokens:
             continue
 
-        # BNP met souvent 2 dates en début de ligne (date op + date valeur)
-        # On prend la 1ère comme date opération
+        # BNP: souvent 2 dates (op + valeur)
         op_date_token = date_tokens[0]
-
-        # On prend le 1er montant qui ressemble à un montant (souvent juste après les dates)
         amount_token = amount_tokens[0]
 
         iso_date = _to_iso_date(op_date_token, period)
-        amount = _to_float(amount_token)
+        amount = _to_float_robust(amount_token)
 
-        # Nettoie label : supprime dates + montants trouvés
+        # Nettoyage label
         label = line
         for d in date_tokens:
             label = label.replace(d, " ")
@@ -78,11 +66,13 @@ def parse_transactions_from_text(raw_text: str) -> List[Transaction]:
             label = label.replace(a, " ")
         label = re.sub(r"\s+", " ", label).strip()
 
-        # Heuristique de signe:
-        # - par défaut: débit (négatif) car souvent colonne "Débit" collée au texte
-        # - si on détecte un pattern de crédit
-        signed_amount = -abs(amount)
+        # Filtrer les lignes "SOLDE" / récap (pas des transactions)
+        up_label = label.upper()
+        if "SOLDE" in up_label or "TOTAL" in up_label:
+            continue
 
+        # Signe (heuristique)
+        signed_amount = -abs(amount)
         if _looks_like_credit(line):
             signed_amount = abs(amount)
 
@@ -107,47 +97,87 @@ def _extract_statement_period(raw_text: str) -> Optional[Tuple[int, int, int, in
 
 
 def _to_iso_date(date_token: str, period: Optional[Tuple[int, int, int, int]]) -> str:
-    # Cas BNP: "22.12" (sans année)
     if re.fullmatch(r"\d{2}\.\d{2}", date_token):
         day = int(date_token[:2])
         month = int(date_token[3:5])
 
         year = None
         if period:
-            start_year, start_month, end_year, end_month = period
-
-            # Si période sur 2 années (ex: déc 2025 -> jan 2026)
+            start_year, start_month, end_year, _ = period
             if start_year != end_year:
-                # règle simple: mois >= mois début => année début, sinon année fin
                 year = start_year if month >= start_month else end_year
             else:
                 year = start_year
 
-        # fallback si on ne trouve pas la période: année courante (moins bien)
         if year is None:
             year = dateparser.parse("today").year
 
         return f"{year:04d}-{month:02d}-{day:02d}"
 
-    # Autres formats avec année
     dt = dateparser.parse(date_token, dayfirst=True)
     if not dt:
         raise ValueError(f"Cannot parse date: {date_token}")
     return dt.date().isoformat()
 
 
-def _to_float(s: str) -> float:
-    # "1 234,56" -> 1234.56
-    s2 = s.replace(" ", "").replace(".", "").replace(",", ".")
-    return float(s2)
+def _to_float_robust(s: str) -> float:
+    """
+    Gère:
+    - 1 234,56
+    - 1 234.56
+    - 1234,56
+    - 1234.56
+    - 7,40 / 7.40
+    """
+    s = s.strip().replace(" ", "")
+
+    # garde le signe
+    sign = -1 if s.startswith("-") else 1
+    s = s.lstrip("+-")
+
+    has_comma = "," in s
+    has_dot = "." in s
+
+    if has_comma and has_dot:
+        # le dernier séparateur est le décimal
+        if s.rfind(",") > s.rfind("."):
+            dec = ","
+            thousands = "."
+        else:
+            dec = "."
+            thousands = ","
+        s = s.replace(thousands, "")
+        s = s.replace(dec, ".")
+        return sign * float(s)
+
+    if has_comma:
+        # si une seule virgule et 2 décimales -> décimal
+        parts = s.split(",")
+        if len(parts) == 2 and len(parts[1]) == 2:
+            s = s.replace(".", "")      # au cas où des milliers
+            s = s.replace(",", ".")
+            return sign * float(s)
+        # sinon on supprime les virgules (milliers) -> int
+        s = s.replace(",", "")
+        return sign * float(s)
+
+    if has_dot:
+        parts = s.split(".")
+        if len(parts) == 2 and len(parts[1]) == 2:
+            # 7.40 ou 1234.56
+            s = s.replace(",", "")      # au cas où
+            return sign * float(s)
+        # sinon points = milliers
+        s = s.replace(".", "")
+        return sign * float(s)
+
+    return sign * float(s)
 
 
 def _looks_like_credit(line: str) -> bool:
-    # Heuristiques simples pour détecter des entrées crédit
-    # (à améliorer plus tard avec des règles par banque)
     credit_keywords = [
         "SALAIRE", "VIR RECU", "VIREMENT RECU", "REMBOURSEMENT", "VERSEMENT",
-        "CREDIT", "CRÉDIT", "INTERETS", "INTÉRÊTS", "REMBT", "REMISE",
+        "CREDIT", "CRÉDIT", "INTERETS", "INTÉRÊTS", "REMISE",
     ]
     up = line.upper()
     return any(k in up for k in credit_keywords)
