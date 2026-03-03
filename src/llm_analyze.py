@@ -12,37 +12,37 @@ def analyze_transactions_with_llm(
     model: str = "gpt-5-mini",
 ) -> Dict[str, Any]:
     """
-    Copilote financier:
-    - Abonnements
-    - Catégories
-    - Anomalies
-    - Actions priorisées
-    Retour en JSON propre.
+    Retourne un JSON calibré pour une UI:
+    - actions max 6 (courtes, concrètes)
+    - abonnements clairs
+    - catégories triées
+    - anomalies limitées
     """
 
     client = OpenAI(api_key=api_key)
 
-    system_prompt = """
-Tu es Spendwise, copilote financier intelligent.
-Tu reçois uniquement des transactions anonymisées (date, label, amount en EUR).
-amount < 0 = dépense, amount > 0 = revenu.
+    system = """
+Tu es Spendwise, copilote financier.
+Tu reçois des transactions anonymisées (date, label, amount en EUR).
+amount < 0 = dépense ; amount > 0 = revenu.
 
-Objectif:
-1) Normaliser les marchands.
-2) Détecter abonnements/récurrences (même si 1 occurrence, si très probable).
-3) Catégoriser les dépenses et calculer les totaux et parts.
-4) Détecter anomalies (doublons, libellé incohérent, montant inhabituel).
-5) Proposer 5 à 10 actions priorisées, concrètes, orientées économies.
+Objectifs:
+1) Résumer la période et les totaux.
+2) Détecter les abonnements/récurrences (même 1 occurrence si très probable).
+3) Catégoriser les dépenses (10-14 catégories max) et calculer total + part (0..1).
+4) Détecter anomalies (doublons, libellé incohérent, dépenses atypiques) max 6.
+5) Proposer 4 à 6 actions prioritaires, très concrètes, avec étapes courtes.
 
-Règles:
+Contraintes UI:
+- Tout en FR.
+- Phrases courtes.
+- Pas de blabla.
 - Réponds STRICTEMENT en JSON valide, sans texte autour.
-- Si tu n’es pas sûr, mets une confidence plus faible.
-- Ne demande pas d’infos personnelles.
 """
 
-    user_payload = {
+    user = {
         "transactions": transactions,
-        "output_schema": {
+        "schema": {
             "summary": {
                 "period_start": "YYYY-MM-DD",
                 "period_end": "YYYY-MM-DD",
@@ -52,13 +52,7 @@ Règles:
                 "transaction_count": 0
             },
             "subscriptions": [
-                {
-                    "merchant": "string",
-                    "amount_typical": 0.0,
-                    "frequency": "weekly|monthly|quarterly|yearly|unknown",
-                    "confidence": 0.0,
-                    "evidence": "string"
-                }
+                {"merchant": "string", "amount_typical": 0.0, "frequency": "weekly|monthly|quarterly|yearly|unknown", "confidence": 0.0, "evidence": "string"}
             ],
             "categories": [
                 {"category": "string", "total": 0.0, "share": 0.0}
@@ -72,22 +66,38 @@ Règles:
         }
     }
 
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt.strip()},
-            {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
-        ],
-    )
-
-    content = resp.choices[0].message.content or ""
-
-    # parse JSON robuste (au cas où le modèle entoure par du texte)
     try:
-        return json.loads(content)
-    except Exception:
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start != -1 and end != -1:
-            return json.loads(content[start:end])
-        return {"error": "JSON parse failed", "raw_output": content}
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system.strip()},
+                {"role": "user", "content": json.dumps(user, ensure_ascii=False)},
+            ],
+        )
+        content = resp.choices[0].message.content or ""
+
+        # Parse robuste
+        try:
+            out = json.loads(content)
+        except Exception:
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start != -1 and end != -1:
+                out = json.loads(content[start:end])
+            else:
+                return {"error": "JSON parse failed", "raw_output": content}
+
+        # Post-calibrage UI (tri + limites)
+        out["subscriptions"] = (out.get("subscriptions") or [])[:12]
+        cats = out.get("categories") or []
+        try:
+            cats = sorted(cats, key=lambda x: float(x.get("total", 0)), reverse=True)
+        except Exception:
+            pass
+        out["categories"] = cats[:14]
+        out["anomalies"] = (out.get("anomalies") or [])[:6]
+        out["actions"] = (out.get("actions") or [])[:6]
+        return out
+
+    except Exception as e:
+        return {"error": str(e)}
