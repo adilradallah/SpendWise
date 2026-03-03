@@ -1,0 +1,40 @@
+{
+  "version": "2026-03-03",
+  "country": "FR",
+  "groups": [
+    {
+      "group": "Streaming vidéo",
+      "keywords": ["netflix", "prime video", "amazon", "disney", "canal", "apple tv", "paramount"],
+      "offers": [
+        { "name": "Prime Video", "price_eur_per_month": 6.99, "type": "Streaming vidéo", "why": "Catalogue large + livraison Prime si utile.", "url": "https://www.amazon.fr/prime" },
+        { "name": "Disney+", "price_eur_per_month": 8.99, "type": "Streaming vidéo", "why": "Très bon si tu regardes Marvel/Star Wars/Disney.", "url": "https://www.disneyplus.com/" },
+        { "name": "Apple TV+", "price_eur_per_month": 9.99, "type": "Streaming vidéo", "why": "Peu de titres mais souvent très qualitatifs.", "url": "https://tv.apple.com/" }
+      ]
+    },
+    {
+      "group": "Apple / App Store",
+      "keywords": ["apple.com/bill", "apple", "icloud", "app store"],
+      "offers": [
+        { "name": "Apple One (selon formule)", "price_eur_per_month": 19.95, "type": "Bundle", "why": "Si tu as plusieurs services Apple, ça réduit les doublons.", "url": "https://www.apple.com/fr/apple-one/" },
+        { "name": "Google One (stockage)", "price_eur_per_month": 1.99, "type": "Cloud", "why": "Alternative simple si tu veux quitter iCloud.", "url": "https://one.google.com/" }
+      ]
+    },
+    {
+      "group": "Télécom",
+      "keywords": ["orange", "sosh", "free", "bouygues", "sfr", "red"],
+      "offers": [
+        { "name": "Sosh (offres variables)", "price_eur_per_month": 19.99, "type": "Télécom", "why": "Souvent moins cher qu’Orange à service similaire.", "url": "https://www.sosh.fr/" },
+        { "name": "RED by SFR (offres variables)", "price_eur_per_month": 19.99, "type": "Télécom", "why": "Prix agressifs, à comparer selon ton besoin.", "url": "https://www.red-by-sfr.fr/" },
+        { "name": "Free (offres variables)", "price_eur_per_month": 19.99, "type": "Télécom", "why": "Bon rapport prix/volume selon forfait.", "url": "https://www.free.fr/" }
+      ]
+    },
+    {
+      "group": "Livraison / membership",
+      "keywords": ["uber one", "uber *one", "deliveroo plus", "deliveroo"],
+      "offers": [
+        { "name": "Désactiver le membership", "price_eur_per_month": 0, "type": "Optimisation", "why": "Souvent rentable seulement si tu commandes très souvent.", "url": "" },
+        { "name": "Passer en retrait / courses", "price_eur_per_month": 0, "type": "Optimisation", "why": "Le plus gros levier d’économies sur la livraison.", "url": "" }
+      ]
+    }
+  ]
+}
